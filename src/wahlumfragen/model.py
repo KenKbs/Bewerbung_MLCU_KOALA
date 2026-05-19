@@ -10,7 +10,22 @@ import pandas as pd
 
 from wahlumfragen.data import DEFAULT_SAMPLE_PATH, PARTY_COLUMNS, load_poll_csv
 
-# Define default coalations as a mapping, maybe add afd + CDU...
+# Party order follows PARTY_COLUMNS:
+# cdu_csu, spd, gruene, fdp, linke, afd, bsw, sonstige
+DEFAULT_LATENT_COVARIANCE = np.array(
+    [ # cdu,    spd,     grüne, fdp     linke    afd     bsw     sonstige
+        [0.040, -0.002, -0.002, -0.002, -0.002, -0.002, -0.002, -0.002],  # cdu_csu
+        [-0.002, 0.040, -0.002, -0.002, -0.002, -0.002, -0.002, -0.002],  # spd
+        [-0.002, -0.002, 0.040, -0.002, -0.002, -0.002, -0.002, -0.002],  # gruene
+        [-0.002, -0.002, -0.002, 0.040, -0.002, -0.002, -0.002, -0.002],  # fdp
+        [-0.002, -0.002, -0.002, -0.002, 0.040, -0.002, -0.002, -0.002],  # linke
+        [-0.002, -0.002, -0.002, -0.002, -0.002, 0.040, -0.002, -0.002],  # afd
+        [-0.002, -0.002, -0.002, -0.002, -0.002, -0.002, 0.040, -0.002],  # bsw
+        [-0.002, -0.002, -0.002, -0.002, -0.002, -0.002, -0.002, 0.040],  # sonstige
+    ],
+    dtype=float,
+)
+
 DEFAULT_COALITIONS: Mapping[str, tuple[str, ...]] = {
     "CDU/CSU + SPD": ("cdu_csu", "spd"),
     "CDU/CSU + Gruene": ("cdu_csu", "gruene"),
@@ -27,8 +42,8 @@ class SimulationResult:
 
     weighted_average: pd.Series
     poll_weights: pd.Series
-    correlation: pd.DataFrame
-    covariance: pd.DataFrame
+    latent_mean: pd.Series
+    latent_covariance: pd.DataFrame
     simulated_votes: pd.DataFrame
     simulated_seats: pd.DataFrame
     uncertainty_intervals: pd.DataFrame
@@ -42,7 +57,8 @@ def compute_poll_weights(
     sample_size_power: float = 0.5,
     as_of_date: str | pd.Timestamp | None = None,
 ) -> pd.Series:
-    """Compute normalized poll weights from recency and sample size.
+    """Compute normalized poll weights from recency and sample size. 
+       We AGGREGATE the polls.
 
     Args:
         rows: Poll rows with at least ``published_at`` and ``sample_size``.
@@ -82,6 +98,7 @@ def compute_weighted_average(
     as_of_date: str | pd.Timestamp | None = None,
 ) -> pd.Series:
     """Compute a recency-weighted polling average as party vote-share proportions.
+       Function to compute the weights explicitly. 
 
     Args:
         rows: Poll rows in wide format with party percentages.
@@ -95,83 +112,60 @@ def compute_weighted_average(
     """
     polls = _polls_to_dataframe(rows, party_columns=party_columns)
 
-    # AGGREGATION --> RECENCY + SAMPLE SIZE
     weights = compute_poll_weights(
         polls,
         half_life_days=half_life_days,
         sample_size_power=sample_size_power,
         as_of_date=as_of_date,
     )
-    # Get parties from that poll and convert to float e.g. 27.5% --> 0.275
     party_shares = polls[list(party_columns)] / 100.0
-    weighted_average = party_shares.mul(weights, axis=0).sum(axis=0) # Multiply by weight
-    return _normalize_series(weighted_average) # Normalize_series, makes sure everything sumes to 100% (individual value / sum of all values)
+    weighted_average = party_shares.mul(weights, axis=0).sum(axis=0)
+    return _normalize_series(weighted_average)
 
 
-def build_correlation_matrix(n_parties: int, off_diagonal_correlation: float = -0.10) -> np.ndarray:
-    """Build a PSD equicorrelation matrix for competing party vote shares.
-
-    Args:
-        n_parties: Number of parties included in the model.
-        off_diagonal_correlation: Shared off-diagonal correlation coefficient.
-
-    Returns:
-        Equicorrelation matrix with ones on the diagonal.
-    """
-    if n_parties < 2:
-        msg = "n_parties must be at least 2"
-        raise ValueError(msg)
-
-    lower_bound = -1 / (n_parties - 1)
-    if off_diagonal_correlation < lower_bound:
-        msg = (
-            f"off_diagonal_correlation={off_diagonal_correlation} is below the PSD lower bound "
-            f"{lower_bound:.6f} for {n_parties} parties"
-        )
-        raise ValueError(msg)
-    if off_diagonal_correlation > 1:
-        msg = "off_diagonal_correlation must be <= 1"
-        raise ValueError(msg)
-
-    corr = np.full((n_parties, n_parties), off_diagonal_correlation, dtype=float)
-    np.fill_diagonal(corr, 1.0)
-    return corr
-
-
-def build_covariance(
-    mean_share: pd.Series | Sequence[float],
-    model_error: float = 0.015,
-    off_diagonal_correlation: float = -0.10,
-    effective_sample_size: float = 1_500.0,
-) -> pd.DataFrame:
-    """Build a PSD covariance matrix around the weighted polling average.
+def sample_vote_shares(
+    mean_share: pd.Series,
+    latent_covariance: np.ndarray = DEFAULT_LATENT_COVARIANCE,
+    n_draws: int = 10_000,
+    seed: int = 42,
+) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
+    """Sample vote shares via latent normal scores followed by softmax.
+       We are MODELING the Uncertatinty
+       Draw from multivariate normal --> put into (logged) softmax
+       To get Voting Probabilites
 
     Args:
-        mean_share: Mean party vote shares as proportions.
-        model_error: Additional polling/model uncertainty floor in share points.
-        off_diagonal_correlation: Shared negative correlation between different parties.
-        effective_sample_size: Approximate sample size used for binomial polling variance.
+        mean_share: Aggregated party vote shares as proportions.
+        latent_covariance: Constant covariance matrix for the latent normal scores.
+        n_draws: Number of Monte Carlo draws.
+        seed: Random seed for reproducible simulations.
 
     Returns:
-        Covariance matrix as a labelled dataframe.
+        Latent mean, labelled latent covariance, and simulated vote-share probabilities.
     """
-    if model_error < 0:
-        msg = "model_error must be non-negative"
-        raise ValueError(msg)
-    if effective_sample_size <= 0:
-        msg = "effective_sample_size must be positive"
+    if n_draws <= 0:
+        msg = "n_draws must be positive"
         raise ValueError(msg)
 
     mean = _mean_share_to_series(mean_share)
-    corr = build_correlation_matrix(len(mean), off_diagonal_correlation=off_diagonal_correlation)
-    sampling_variance = np.maximum(mean.to_numpy() * (1.0 - mean.to_numpy()), 0.0) / effective_sample_size
-    std = np.sqrt(sampling_variance + model_error**2)
-    cov = np.outer(std, std) * corr
+    covariance = _validate_latent_covariance(latent_covariance, n_parties=len(mean))
 
-    eigvals = np.linalg.eigvalsh(cov)
-    assert eigvals.min() > -1e-8
+    latent_mean = pd.Series(np.log(mean.to_numpy()), index=mean.index, name="latent_mean")
+    latent_covariance_df = pd.DataFrame(covariance, index=mean.index, columns=mean.index)
 
-    return pd.DataFrame(cov, index=mean.index, columns=mean.index)
+    rng = np.random.default_rng(seed)
+
+    # Draw scores from multivariate normal distribution
+    latent_draws = rng.multivariate_normal(
+        mean=latent_mean.to_numpy(),
+        cov=covariance,
+        size=n_draws,
+        check_valid="raise",
+    )
+    
+    # Get Simulated votes via Softmax
+    simulated_votes = pd.DataFrame(_softmax(latent_draws), columns=mean.index)
+    return latent_mean, latent_covariance_df, simulated_votes
 
 
 def simulate_election(
@@ -183,13 +177,11 @@ def simulate_election(
     seed: int = 42,
     half_life_days: float = 14.0,
     sample_size_power: float = 0.5,
-    model_error: float = 0.015,
-    off_diagonal_correlation: float = -0.10,
-    effective_sample_size: float = 1_500.0,
+    latent_covariance: np.ndarray = DEFAULT_LATENT_COVARIANCE,
     threshold_exemptions: Sequence[str] = ("sonstige",),
     as_of_date: str | pd.Timestamp | None = None,
 ) -> SimulationResult:
-    """Simulate election outcomes from a correlated polling-average distribution.
+    """Simulate election outcomes from latent normal scores and softmax probabilities.
 
     Args:
         rows: Poll rows in wide format with party percentages.
@@ -200,31 +192,29 @@ def simulate_election(
         seed: Random seed for reproducible simulations.
         half_life_days: Number of days after which recency weight halves.
         sample_size_power: Exponent applied to sample size.
-        model_error: Additional polling/model uncertainty floor in share points.
-        off_diagonal_correlation: Shared negative correlation between different parties.
-        effective_sample_size: Approximate sample size used for binomial polling variance.
+        latent_covariance: Constant covariance matrix for latent party scores.
         threshold_exemptions: Parties exempt from threshold probability reporting and seat eligibility.
         as_of_date: Date from which recency is measured. Defaults to latest poll date.
 
     Returns:
-        SimulationResult with averages, matrices, simulated draws, and probability summaries.
+        SimulationResult with averages, latent parameters, simulated draws, and summaries.
     """
-    if n_draws <= 0:
-        msg = "n_draws must be positive"
-        raise ValueError(msg)
     if not 0 <= threshold <= 1:
         msg = "threshold must be between 0 and 1"
         raise ValueError(msg)
 
+    # Get polls
     polls = _polls_to_dataframe(rows, party_columns=party_columns)
     _validate_coalitions(coalitions, party_columns)
 
+    # Calculate poll weights
     poll_weights = compute_poll_weights(
         polls,
         half_life_days=half_life_days,
         sample_size_power=sample_size_power,
         as_of_date=as_of_date,
     )
+    # Aggregate polls with weights
     weighted_average = compute_weighted_average(
         polls,
         party_columns=party_columns,
@@ -232,26 +222,15 @@ def simulate_election(
         sample_size_power=sample_size_power,
         as_of_date=as_of_date,
     )
-    covariance = build_covariance(
+    # Model uncertainty
+    latent_mean, latent_covariance_df, simulated_votes = sample_vote_shares(
         weighted_average,
-        model_error=model_error,
-        off_diagonal_correlation=off_diagonal_correlation,
-        effective_sample_size=effective_sample_size,
-    )
-    correlation = pd.DataFrame(
-        build_correlation_matrix(len(party_columns), off_diagonal_correlation=off_diagonal_correlation),
-        index=party_columns,
-        columns=party_columns,
+        latent_covariance=latent_covariance,
+        n_draws=n_draws,
+        seed=seed,
     )
 
-    rng = np.random.default_rng(seed)
-    draws = rng.multivariate_normal(
-        mean=weighted_average.to_numpy(),
-        cov=covariance.to_numpy(),
-        size=n_draws,
-        check_valid="raise",
-    )
-    simulated_votes = _clip_and_normalize_draws(draws, columns=party_columns)
+    # Calculate "5% Hürde" etc. uncertainty intervalls etc. 
     simulated_seats = _apply_threshold(simulated_votes, threshold=threshold, threshold_exemptions=threshold_exemptions)
     threshold_probabilities = _threshold_probabilities(
         simulated_votes,
@@ -264,8 +243,8 @@ def simulate_election(
     return SimulationResult(
         weighted_average=weighted_average,
         poll_weights=poll_weights,
-        correlation=correlation,
-        covariance=covariance,
+        latent_mean=latent_mean,
+        latent_covariance=latent_covariance_df,
         simulated_votes=simulated_votes,
         simulated_seats=simulated_seats,
         uncertainty_intervals=uncertainty_intervals,
@@ -283,6 +262,29 @@ def summarize_results(result: SimulationResult) -> dict[str, pd.DataFrame | pd.S
         "threshold_probabilities": result.threshold_probabilities,
         "coalition_probabilities": result.coalition_probabilities.sort_values(ascending=False),
     }
+
+
+# HELPER FUNCTIONS 
+def _validate_latent_covariance(covariance: np.ndarray, n_parties: int) -> np.ndarray:
+    """Validate the fixed latent covariance matrix used by the simulator."""
+    covariance = np.asarray(covariance, dtype=float)
+    if covariance.shape != (n_parties, n_parties):
+        msg = f"latent_covariance must have shape {(n_parties, n_parties)}, got {covariance.shape}"
+        raise ValueError(msg)
+    if not np.allclose(covariance, covariance.T):
+        msg = "latent_covariance must be symmetric"
+        raise ValueError(msg)
+
+    eigvals = np.linalg.eigvalsh(covariance)
+    assert eigvals.min() > -1e-8
+    return covariance
+
+
+def _softmax(values: np.ndarray) -> np.ndarray:
+    """Convert latent scores into vote-share probabilities."""
+    shifted_values = values - values.max(axis=1, keepdims=True)
+    exp_values = np.exp(shifted_values)
+    return exp_values / exp_values.sum(axis=1, keepdims=True)
 
 
 def _polls_to_dataframe(
@@ -324,33 +326,20 @@ def _mean_share_to_series(mean_share: pd.Series | Sequence[float]) -> pd.Series:
     if mean.empty:
         msg = "mean_share must not be empty"
         raise ValueError(msg)
-    if (mean < 0).any():
-        msg = "mean_share cannot contain negative values"
+    if (mean <= 0).any():
+        msg = "mean_share must contain positive values before taking log scores"
         raise ValueError(msg)
 
     return _normalize_series(mean)
 
 
 def _normalize_series(series: pd.Series) -> pd.Series:
-    """Normalize a non-negative series to sum to one, by dividing
-    each individual percentage by the sum of percantages."""
+    """Normalize a non-negative series to sum to one."""
     total = float(series.sum())
     if total <= 0:
         msg = "cannot normalize shares with non-positive total"
         raise ValueError(msg)
     return series / total
-
-
-def _clip_and_normalize_draws(draws: np.ndarray, columns: Sequence[str]) -> pd.DataFrame:
-    """Clip negative simulated vote shares and normalize each draw to one."""
-    clipped = np.clip(draws, a_min=0.0, a_max=None)
-    row_sums = clipped.sum(axis=1, keepdims=True)
-    zero_rows = np.isclose(row_sums[:, 0], 0.0)
-    if zero_rows.any():
-        clipped[zero_rows, :] = 1.0 / clipped.shape[1]
-        row_sums = clipped.sum(axis=1, keepdims=True)
-    normalized = clipped / row_sums
-    return pd.DataFrame(normalized, columns=columns)
 
 
 def _apply_threshold(
@@ -417,10 +406,11 @@ def _validate_coalitions(coalitions: Mapping[str, Sequence[str]], party_columns:
         raise ValueError(msg)
 
 
-def main(data_path: Path = DEFAULT_SAMPLE_PATH) -> None:
+def main(data_path: Path = DEFAULT_SAMPLE_PATH,
+         n_draws: int = 10000) -> None:
     """Run the prototype model on the sample data and print compact summaries."""
     rows = load_poll_csv(data_path)
-    result = simulate_election(rows)
+    result = simulate_election(rows, n_draws=n_draws)
     summaries = summarize_results(result)
 
     print("Weighted polling average")

@@ -15,6 +15,11 @@ def generate_data(ctx: Context) -> None:
 
 
 @task
+def simulate_polls(ctx: Context, draws: int = 10000) -> None:
+    """Run MCMC simulation by first aggregating, then modeling uncertainty and drawing x samples"""
+    ctx.run(f"uv run src/{PROJECT_NAME}/model.py --n-draws={draws}")
+
+@task
 def train(ctx: Context) -> None:
     """Train model."""
     ctx.run(f"uv run src/{PROJECT_NAME}/train.py", echo=True, pty=not WINDOWS)
