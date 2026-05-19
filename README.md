@@ -1,7 +1,30 @@
-````markdown
 # wahlumfragen
 
 Repo for application MCML Koala
+
+## Run locally
+
+Start the Streamlit dashboard with uv:
+
+```bash
+uv run streamlit run streamlit_app.py
+```
+
+## Docker deployment
+
+Build the app image:
+
+```bash
+docker build -f docker/app.Dockerfile -t wahlumfragen-app .
+```
+
+Run the container and map the Streamlit port to the host:
+
+```bash
+docker run --rm -p 8501:8501 wahlumfragen-app
+```
+
+Open the dashboard at [http://localhost:8501](http://localhost:8501).
 
 ## Project structure
 
@@ -15,9 +38,8 @@ The directory structure of the project looks like this:
 ├── data/                     # Data directory
 │   ├── processed
 │   └── raw
-├── dockerfiles/              # Dockerfiles
-│   ├── api.Dockerfile
-│   └── train.Dockerfile
+├── docker/                   # Docker deployment
+│   └── app.Dockerfile
 ├── docs/                     # Documentation
 │   ├── mkdocs.yml
 │   └── source/
@@ -27,7 +49,7 @@ The directory structure of the project looks like this:
 ├── reports/                  # Reports
 │   └── figures/
 ├── src/                      # Source code
-│   ├── project_name/
+│   ├── wahlumfragen/
 │   │   ├── __init__.py
 │   │   ├── api.py
 │   │   ├── data.py
@@ -52,5 +74,3 @@ The directory structure of the project looks like this:
 Created using [mlops_template](https://github.com/SkafteNicki/mlops_template),
 a [cookiecutter template](https://github.com/cookiecutter/cookiecutter) for getting
 started with Machine Learning Operations (MLOps).
-
-````

@@ -5,6 +5,8 @@ from invoke import Context, task
 WINDOWS = os.name == "nt"
 PROJECT_NAME = "wahlumfragen"
 PYTHON_VERSION = "3.12"
+DOCKER_IMAGE = "wahlumfragen-app"
+DOCKER_PORT = 8501
 
 
 # Project commands
@@ -35,15 +37,18 @@ def app(ctx: Context) -> None:
 
 @task
 def docker_build(ctx: Context, progress: str = "plain") -> None:
-    """Build docker images."""
+    """Build the Streamlit app Docker image."""
     ctx.run(
-        f"docker build -t train:latest . -f dockerfiles/train.dockerfile --progress={progress}",
+        f"docker build -f docker/app.Dockerfile -t {DOCKER_IMAGE}:latest . --progress={progress}",
         echo=True,
         pty=not WINDOWS,
     )
-    ctx.run(
-        f"docker build -t api:latest . -f dockerfiles/api.dockerfile --progress={progress}", echo=True, pty=not WINDOWS
-    )
+
+
+@task
+def docker_run(ctx: Context, port: int = DOCKER_PORT) -> None:
+    """Run the Streamlit app Docker container."""
+    ctx.run(f"docker run --rm -p {port}:{DOCKER_PORT} {DOCKER_IMAGE}:latest", echo=True, pty=not WINDOWS)
 
 
 # Documentation commands
