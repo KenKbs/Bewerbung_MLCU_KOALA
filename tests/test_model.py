@@ -6,6 +6,7 @@ from wahlumfragen.model import (
     DEFAULT_LATENT_COVARIANCE,
     compute_poll_weights,
     compute_weighted_average,
+    load_simulation_result,
     sample_vote_shares,
     simulate_election,
 )
@@ -70,7 +71,7 @@ def test_sample_vote_shares_rejects_wrong_covariance_shape():
 
 def test_simulated_vote_shares_are_valid_probabilities():
     """Test Monte Carlo draws after softmax conversion."""
-    result = simulate_election(_sample_rows(), n_draws=1_000, seed=123)
+    result = simulate_election(_sample_rows(), n_draws=1_000, seed=123, save_result_path=None)
 
     assert (result.simulated_votes > 0).all().all()
     assert np.allclose(result.simulated_votes.sum(axis=1), 1.0)
@@ -80,8 +81,20 @@ def test_simulated_vote_shares_are_valid_probabilities():
 
 def test_simulation_is_deterministic_with_fixed_seed():
     """Test that a fixed seed produces repeatable simulations."""
-    first = simulate_election(_sample_rows(), n_draws=500, seed=123)
-    second = simulate_election(_sample_rows(), n_draws=500, seed=123)
+    first = simulate_election(_sample_rows(), n_draws=500, seed=123, save_result_path=None)
+    second = simulate_election(_sample_rows(), n_draws=500, seed=123, save_result_path=None)
 
     assert np.allclose(first.simulated_votes.to_numpy(), second.simulated_votes.to_numpy())
     assert np.allclose(first.coalition_probabilities.to_numpy(), second.coalition_probabilities.to_numpy())
+
+
+def test_simulation_result_can_be_saved_and_loaded(tmp_path):
+    """Test that the full SimulationResult can be persisted for later visualization."""
+    output_path = tmp_path / "simulation_result.pkl"
+
+    result = simulate_election(_sample_rows(), n_draws=500, seed=123, save_result_path=output_path)
+    loaded_result = load_simulation_result(output_path)
+
+    assert output_path.exists()
+    assert np.allclose(loaded_result.weighted_average.to_numpy(), result.weighted_average.to_numpy())
+    assert np.allclose(loaded_result.simulated_votes.to_numpy(), result.simulated_votes.to_numpy())

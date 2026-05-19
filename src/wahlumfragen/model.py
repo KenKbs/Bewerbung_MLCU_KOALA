@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import pickle
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -12,10 +13,12 @@ import typer
 
 from wahlumfragen.data import DEFAULT_SAMPLE_PATH, PARTY_COLUMNS, load_poll_csv
 
+DEFAULT_SIMULATION_RESULT_PATH = Path("data") / "simulation_result.pkl"
+
 # Party order follows PARTY_COLUMNS:
 # cdu_csu, spd, gruene, fdp, linke, afd, bsw, sonstige
 DEFAULT_LATENT_COVARIANCE = np.array(
-    [ # cdu,    spd,     grüne, fdp     linke    afd     bsw     sonstige
+    [  # cdu,    spd,     grüne, fdp     linke    afd     bsw     sonstige
         [0.040, -0.002, -0.002, -0.002, -0.002, -0.002, -0.002, -0.002],  # cdu_csu
         [-0.002, 0.040, -0.002, -0.002, -0.002, -0.002, -0.002, -0.002],  # spd
         [-0.002, -0.002, 0.040, -0.002, -0.002, -0.002, -0.002, -0.002],  # gruene
@@ -59,7 +62,7 @@ def compute_poll_weights(
     sample_size_power: float = 0.5,
     as_of_date: str | pd.Timestamp | None = None,
 ) -> pd.Series:
-    """Compute normalized poll weights from recency and sample size. 
+    """Compute normalized poll weights from recency and sample size.
        We AGGREGATE the polls.
 
     Args:
@@ -100,7 +103,7 @@ def compute_weighted_average(
     as_of_date: str | pd.Timestamp | None = None,
 ) -> pd.Series:
     """Compute a recency-weighted polling average as party vote-share proportions.
-       Function to compute the weights explicitly. 
+       Function to compute the weights explicitly.
 
     Args:
         rows: Poll rows in wide format with party percentages.
@@ -164,7 +167,7 @@ def sample_vote_shares(
         size=n_draws,
         check_valid="raise",
     )
-    
+
     # Get Simulated votes via Softmax
     simulated_votes = pd.DataFrame(_softmax(latent_draws), columns=mean.index)
     return latent_mean, latent_covariance_df, simulated_votes
@@ -181,6 +184,7 @@ def simulate_election(
     sample_size_power: float = 0.5,
     latent_covariance: np.ndarray = DEFAULT_LATENT_COVARIANCE,
     threshold_exemptions: Sequence[str] = ("sonstige",),
+    save_result_path: Path | str | None = DEFAULT_SIMULATION_RESULT_PATH,
     as_of_date: str | pd.Timestamp | None = None,
 ) -> SimulationResult:
     """Simulate election outcomes from latent normal scores and softmax probabilities.
@@ -196,6 +200,7 @@ def simulate_election(
         sample_size_power: Exponent applied to sample size.
         latent_covariance: Constant covariance matrix for latent party scores.
         threshold_exemptions: Parties exempt from threshold probability reporting and seat eligibility.
+        save_result_path: Optional pickle path for persisting the full SimulationResult.
         as_of_date: Date from which recency is measured. Defaults to latest poll date.
 
     Returns:
@@ -232,7 +237,7 @@ def simulate_election(
         seed=seed,
     )
 
-    # Calculate "5% Hürde" etc. uncertainty intervalls etc. 
+    # Calculate "5% Hürde" etc. uncertainty intervalls etc.
     simulated_seats = _apply_threshold(simulated_votes, threshold=threshold, threshold_exemptions=threshold_exemptions)
     threshold_probabilities = _threshold_probabilities(
         simulated_votes,
@@ -242,7 +247,7 @@ def simulate_election(
     coalition_probabilities = _coalition_probabilities(simulated_seats, coalitions=coalitions)
     uncertainty_intervals = _uncertainty_intervals(simulated_votes)
 
-    return SimulationResult(
+    result = SimulationResult(
         weighted_average=weighted_average,
         poll_weights=poll_weights,
         latent_mean=latent_mean,
@@ -253,6 +258,49 @@ def simulate_election(
         threshold_probabilities=threshold_probabilities,
         coalition_probabilities=coalition_probabilities,
     )
+    
+    # Save Results with pickle to data folder for plotting later
+    if save_result_path is not None:
+        _save_simulation_result(result, save_result_path)
+    return result
+
+
+def _save_simulation_result(
+    result: SimulationResult,
+    output_path: Path | str = DEFAULT_SIMULATION_RESULT_PATH,
+) -> Path:
+    """Save a SimulationResult object as a local pickle file."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as file:
+        pickle.dump(_simulation_result_to_dict(result), file)
+    return path
+
+
+def load_simulation_result(input_path: Path | str = DEFAULT_SIMULATION_RESULT_PATH) -> SimulationResult:
+    """Load a trusted local SimulationResult pickle file."""
+    with Path(input_path).open("rb") as file:
+        payload = pickle.load(file)
+    if isinstance(payload, SimulationResult):
+        return payload
+    if isinstance(payload, dict):
+        expected_fields = [field.name for field in fields(SimulationResult)]
+        missing_fields = sorted(set(expected_fields).difference(payload))
+        if missing_fields:
+            msg = f"Saved result is missing fields: {missing_fields}"
+            raise TypeError(msg)
+        return SimulationResult(**{field_name: payload[field_name] for field_name in expected_fields})
+
+    msg = f"Expected SimulationResult payload, got {type(payload).__name__}"
+    raise TypeError(msg)
+
+
+def _simulation_result_to_dict(result: SimulationResult) -> dict[str, Any]:
+    """Convert a SimulationResult to a pickle-friendly plain dictionary."""
+    if not isinstance(result, SimulationResult):
+        msg = f"Expected SimulationResult, got {type(result).__name__}"
+        raise TypeError(msg)
+    return {field.name: getattr(result, field.name) for field in fields(SimulationResult)}
 
 
 def summarize_results(result: SimulationResult) -> dict[str, pd.DataFrame | pd.Series]:
@@ -266,7 +314,7 @@ def summarize_results(result: SimulationResult) -> dict[str, pd.DataFrame | pd.S
     }
 
 
-# HELPER FUNCTIONS 
+# HELPER FUNCTIONS
 def _validate_latent_covariance(covariance: np.ndarray, n_parties: int) -> np.ndarray:
     """Validate the fixed latent covariance matrix used by the simulator."""
     covariance = np.asarray(covariance, dtype=float)
@@ -408,8 +456,7 @@ def _validate_coalitions(coalitions: Mapping[str, Sequence[str]], party_columns:
         raise ValueError(msg)
 
 
-def main(data_path: Path = DEFAULT_SAMPLE_PATH,
-         n_draws: int = 50000) -> None:
+def main(data_path: Path = DEFAULT_SAMPLE_PATH, n_draws: int = 50000) -> None:
     """Run the prototype model on the sample data and print compact summaries."""
     rows = load_poll_csv(data_path)
     result = simulate_election(rows, n_draws=n_draws)
