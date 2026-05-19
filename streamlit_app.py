@@ -376,9 +376,41 @@ def _inject_css() -> None:
             padding: 0.4rem 0.65rem;
         }
 
+        div[data-baseweb="tab-list"] {
+            gap: 0.35rem;
+            border-bottom: 1px solid rgba(100, 116, 139, 0.24);
+        }
+
         button[data-baseweb="tab"] {
+            min-height: 2.65rem;
+            padding: 0.45rem 0.75rem;
+            border-radius: 6px 6px 0 0;
+            color: #334155;
             font-weight: 800;
             letter-spacing: 0;
+        }
+
+        button[data-baseweb="tab"] p {
+            color: #334155;
+            font-weight: 800;
+        }
+
+        button[data-baseweb="tab"]:hover {
+            background: rgba(15, 118, 110, 0.08);
+        }
+
+        button[data-baseweb="tab"]:hover p {
+            color: #0F766E;
+        }
+
+        button[data-baseweb="tab"][aria-selected="true"] {
+            background: #FFFFFF;
+            color: #0F766E;
+            border-bottom: 3px solid #0F766E;
+        }
+
+        button[data-baseweb="tab"][aria-selected="true"] p {
+            color: #0F766E;
         }
 
         @media (max-width: 760px) {
