@@ -150,7 +150,14 @@ def plot_vote_share_forecast(result: SimulationResult) -> Figure:
             label="Weighted average",
         ),
     ]
-    axis.legend(handles=legend, loc="lower right", frameon=False, labelcolor=MUTED)
+    axis.legend(
+        handles=legend,
+        loc="lower right",
+        bbox_to_anchor=(0.88, 0.03),
+        borderaxespad=0,
+        frameon=False,
+        labelcolor=MUTED,
+    )
     figure.subplots_adjust(left=0.18, right=0.96, top=0.78, bottom=0.14)
     return figure
 
