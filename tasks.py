@@ -19,17 +19,12 @@ def simulate_polls(ctx: Context, draws: int = 50000) -> None:
     """Run MCMC simulation by first aggregating, then modeling uncertainty and drawing x samples"""
     ctx.run(f"uv run src/{PROJECT_NAME}/model.py --n-draws={draws}")
 
-@task
-def train(ctx: Context) -> None:
-    """Train model."""
-    ctx.run(f"uv run src/{PROJECT_NAME}/train.py", echo=True, pty=not WINDOWS)
-
 
 @task
-def test(ctx: Context) -> None:
-    """Run tests."""
-    ctx.run("uv run coverage run -m pytest tests/", echo=True, pty=not WINDOWS)
-    ctx.run("uv run coverage report -m -i", echo=True, pty=not WINDOWS)
+def plot(ctx: Context, save_svg: bool = False) -> None:
+    """Plot the results of the MCMC simulation."""
+    save_svg_flag = " --save-svg" if save_svg else ""
+    ctx.run(f"uv run src/{PROJECT_NAME}/visualize.py{save_svg_flag}", echo=True, pty=not WINDOWS)
 
 
 @task

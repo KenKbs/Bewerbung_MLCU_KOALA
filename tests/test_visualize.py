@@ -10,7 +10,7 @@ EXPECTED_FIGURES = {
     "vote_share_forecast",
     "threshold_probabilities",
     "coalition_probabilities",
-    "seat_share_distributions",
+    "eligible_vote_share_distribution",
 }
 
 

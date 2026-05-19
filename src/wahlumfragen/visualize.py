@@ -197,7 +197,7 @@ def plot_threshold_probabilities(result: SimulationResult) -> Figure:
             )
 
     axis.axvline(50, color=REFERENCE, linewidth=1.1, linestyle=(0, (4, 4)))
-    axis.text(51, len(probabilities) - 0.35, "50 percent", color=MUTED, fontsize=9, ha="left", va="center")
+    axis.text(51, len(probabilities) - 0.35, "even odds (50% probability)", color=MUTED, fontsize=9, ha="left", va="center")
 
     axis.set_xlim(0, 100)
     axis.set_yticks(y_positions, [_party_label(party) for party in probabilities.index])
@@ -255,14 +255,14 @@ def plot_coalition_probabilities(result: SimulationResult) -> Figure:
     axis.set_xlim(0, 100)
     axis.set_yticks(y_positions, probabilities.index)
     axis.xaxis.set_major_formatter(PercentFormatter(xmax=100, decimals=0))
-    axis.set_xlabel("Majority probability", color=MUTED, labelpad=10)
+    axis.set_xlabel("even odds (50% probability)", color=MUTED, labelpad=10)
     _style_axis(axis)
     figure.subplots_adjust(left=0.30, right=0.95, top=0.77, bottom=0.15)
     return figure
 
 
-def plot_seat_share_distributions(result: SimulationResult) -> Figure:
-    """Plot simulated seat-share distributions after threshold handling."""
+def plot_eligible_vote_share_distribution(result: SimulationResult) -> Figure:
+    """Plot simulated eligible vote-share distributions after threshold handling."""
     _set_theme()
     seat_shares = result.simulated_seats.copy()
     visible_parties = [
@@ -277,8 +277,8 @@ def plot_seat_share_distributions(result: SimulationResult) -> Figure:
     figure, axis = _figure(figsize=(10, 6.2))
     _add_header(
         figure,
-        "Seat-share distributions",
-        "Simulation draws after the simplified threshold and redistribution step",
+        "Eligible vote-share distribution",
+        "Simulation draws after applying the simplified threshold rule",
     )
 
     y_positions = np.arange(len(ordered_parties))
@@ -318,7 +318,7 @@ def plot_seat_share_distributions(result: SimulationResult) -> Figure:
     axis.set_xlim(0, x_max)
     axis.set_yticks(y_positions, [_party_label(party) for party in ordered_parties])
     axis.xaxis.set_major_formatter(PercentFormatter(xmax=100, decimals=0))
-    axis.set_xlabel("Seat-share proxy", color=MUTED, labelpad=10)
+    axis.set_xlabel("Eligible vote share", color=MUTED, labelpad=10)
     _style_axis(axis)
     figure.subplots_adjust(left=0.18, right=0.96, top=0.78, bottom=0.14)
     return figure
@@ -380,7 +380,7 @@ FIGURE_BUILDERS = {
     "vote_share_forecast": plot_vote_share_forecast,
     "threshold_probabilities": plot_threshold_probabilities,
     "coalition_probabilities": plot_coalition_probabilities,
-    "seat_share_distributions": plot_seat_share_distributions,
+    "eligible_vote_share_distribution": plot_eligible_vote_share_distribution,
 }
 
 
