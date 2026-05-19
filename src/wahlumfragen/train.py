@@ -1,10 +1,12 @@
 from wahlumfragen.model import Model
-from wahlumfragen.data import MyDataset
+from wahlumfragen.data import load_poll_csv
+
 
 def train():
-    dataset = MyDataset("data/raw")
+    polls = load_poll_csv("data/sample.csv")
     model = Model()
-    # add rest of your training code here
+    print(f"Loaded {len(polls)} polls for {model.__class__.__name__}.")
+
 
 if __name__ == "__main__":
     train()
