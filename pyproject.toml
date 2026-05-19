@@ -19,6 +19,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.136.1",
+    "invoke>=3.0.3",
     "matplotlib>=3.10.9",
     "numpy>=2.4.6",
     "pandas>=3.0.3",
@@ -32,7 +33,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "coverage==7.6.9",
-    "invoke==2.2.0",
     "pre-commit==4.1.0",
     "pytest==8.3.4",
     "ruff==0.1.3",
