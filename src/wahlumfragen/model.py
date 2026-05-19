@@ -460,6 +460,8 @@ def main(data_path: Path = DEFAULT_SAMPLE_PATH, n_draws: int = 50000) -> None:
     """Run the prototype model on the sample data and print compact summaries."""
     rows = load_poll_csv(data_path)
     result = simulate_election(rows, n_draws=n_draws)
+    # TODO MAYBE remove summaries from this function / script
+    # Rely on plotting script /web-app
     summaries = summarize_results(result)
 
     print("Weighted polling average")
