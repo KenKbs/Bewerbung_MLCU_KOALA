@@ -8,6 +8,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+import typer
+
 from wahlumfragen.data import DEFAULT_SAMPLE_PATH, PARTY_COLUMNS, load_poll_csv
 
 # Party order follows PARTY_COLUMNS:
@@ -407,7 +409,7 @@ def _validate_coalitions(coalitions: Mapping[str, Sequence[str]], party_columns:
 
 
 def main(data_path: Path = DEFAULT_SAMPLE_PATH,
-         n_draws: int = 10000) -> None:
+         n_draws: int = 50000) -> None:
     """Run the prototype model on the sample data and print compact summaries."""
     rows = load_poll_csv(data_path)
     result = simulate_election(rows, n_draws=n_draws)
@@ -422,4 +424,4 @@ def main(data_path: Path = DEFAULT_SAMPLE_PATH,
 
 
 if __name__ == "__main__":
-    main()
+    typer.run(main)
