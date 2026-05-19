@@ -28,6 +28,12 @@ def plot(ctx: Context, save_svg: bool = False) -> None:
 
 
 @task
+def app(ctx: Context) -> None:
+    """Run the Streamlit dashboard."""
+    ctx.run("uv run streamlit run streamlit_app.py", echo=True, pty=not WINDOWS)
+
+
+@task
 def docker_build(ctx: Context, progress: str = "plain") -> None:
     """Build docker images."""
     ctx.run(
