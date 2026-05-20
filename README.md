@@ -21,7 +21,8 @@ Prerequisites:
 - [`uv`](https://docs.astral.sh/uv/)
 
 ```bash
-cd Bewerbung_Wahlumfragen
+git clone https://github.com/KenKbs/Bewerbung_MLCU_KOALA
+cd Bewerbung_MLCU_KOALA
 uv sync --locked
 uv run invoke app
 ```
@@ -41,7 +42,8 @@ Prerequisite:
 - Docker
 
 ```bash
-cd Bewerbung_Wahlumfragen
+git clone https://github.com/KenKbs/Bewerbung_MLCU_KOALA
+cd Bewerbung_MLCU_KOALA
 uv run invoke docker-build
 docker run --rm -p 8501:8501 wahlumfragen-app
 ```
